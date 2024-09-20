@@ -1,0 +1,38 @@
+{
+  "name": "@janiscommerce/sns",
+  "version": "1.0.0",
+  "description": "SNS Wrapper",
+  "main": "lib/index.js",
+  "scripts": {
+    "test": "export TEST_ENV=true; mocha --exit -R nyan --recursive tests/",
+    "test-ci": "nyc --reporter=html --reporter=text mocha --recursive tests/",
+    "watch-test": "export TEST_ENV=true; mocha --exit -R nyan -w --recursive tests/",
+    "coverage": "nyc npm test",
+    "lint": "eslint lib/ tests/",
+    "build-types": "tsc lib/index.js --declaration --allowJs --emitDeclarationOnly --outDir types --skipLibCheck",
+    "prepare": "husky install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/janis-commerce/sns.git"
+  },
+  "author": "Janis",
+  "license": "ISC",
+  "homepage": "https://github.com/janis-commerce/sns.git#readme",
+  "devDependencies": {
+    "@aws-sdk/client-sns": "^3.645.0",
+    "eslint": "^8.57.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.17.3",
+    "husky": "^7.0.4",
+    "mocha": "^10.7.3",
+    "nyc": "^17.0.0",
+    "sinon": "^18.0.0",
+    "typescript": "^5.6.2"
+  },
+  "files": [
+    "lib/",
+    "types/"
+  ],
+  "types": "types/index.d.ts"
+}
