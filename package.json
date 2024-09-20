@@ -34,5 +34,8 @@
     "lib/",
     "types/"
   ],
-  "types": "types/index.d.ts"
+  "types": "types/index.d.ts",
+  "dependencies": {
+    "lllog": "^1.1.2"
+  }
 }
