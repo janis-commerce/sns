@@ -192,7 +192,7 @@ describe('SnsTrigger', () => {
 				}),
 				MessageAttributes: {
 					'janis-client': {
-						DataType: 'string',
+						DataType: 'String',
 						StringValue: 'test'
 					},
 					foo: {
