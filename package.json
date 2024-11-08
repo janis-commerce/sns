@@ -1,6 +1,6 @@
 {
   "name": "@janiscommerce/sns",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SNS Wrapper",
   "main": "lib/index.js",
   "scripts": {
