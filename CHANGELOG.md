@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### [1.0.1] - 2024-11-08
+### Fixed
+- Documentation now explains that SNS Client depedency must be manually imported
+
 ### [1.0.0] - 2024-10-18
 ### Added
 - SNS trigger for individual and batch events

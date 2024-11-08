@@ -10,6 +10,14 @@ SNS Wrapper
 npm install @janiscommerce/sns
 ```
 
+### Install peer dependencies
+```sh
+# Install as devDependency if you run your code in AWS Lambda, which already includes the SDK
+npm install --dev @aws-sdk/client-sns@3
+```
+
+> Why? This is to avoid installing the SDK in production and freezing the SDK version in this package
+
 ## API
 
 > You can see `SnsTrigger` and every available property in the [types definition](types/sns-trigger.d.ts) or using your IDE intellisense.
