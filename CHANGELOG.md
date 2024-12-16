@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### [1.0.2] - 2024-12-16
+### Fixed
+- Now `publishEvents()` splits events into batches of up to 10 entries (fixes **TooManyEntriesInBatchRequestException** SNS error)
+
 ### [1.0.1] - 2024-11-08
 ### Fixed
-- Documentation now explains that SNS Client depedency must be manually imported
+- Documentation now explains that SNS Client dependency must be manually imported
 
 ### [1.0.0] - 2024-10-18
 ### Added

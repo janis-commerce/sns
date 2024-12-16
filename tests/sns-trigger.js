@@ -485,6 +485,53 @@ describe('SnsTrigger', () => {
 			}, true).length, 1);
 		});
 
+		it('Should split events in batches not greater than 10 entries', async () => {
+
+			snsMock.on(PublishBatchCommand)
+				.resolvesOnce({
+					Successful: [{
+						MessageId: 'msg-1'
+					}, {
+						MessageId: 'msg-2'
+					}]
+				})
+				.resolvesOnce({
+					Failed: [{
+						Code: 'SQS001',
+						Message: 'SQS Failed'
+					}]
+				});
+
+			// should have 2 batches, first with 10 and the second with 5
+			const events = Array.from({ length: 15 }, (_, index) => ({
+				content: { message: `Event ${index + 1}` }
+			}));
+
+			const snsTrigger = new SnsTrigger();
+			const result = await snsTrigger.publishEvents(sampleTopicArn, events);
+
+			assert.deepStrictEqual(result.successCount, 2);
+			assert.deepStrictEqual(result.failedCount, 1);
+
+			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 2);
+
+			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand, {
+				TopicArn: sampleTopicArn,
+				PublishBatchRequestEntries: Array.from({ length: 10 }, (_, index) => ({
+					Id: `${index + 1}`,
+					Message: JSON.stringify({ message: `Event ${index + 1}` })
+				}))
+			}, true).length, 1);
+
+			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand, {
+				TopicArn: sampleTopicArn,
+				PublishBatchRequestEntries: Array.from({ length: 5 }, (_, index) => ({
+					Id: `${index + 11}`,
+					Message: JSON.stringify({ message: `Event ${index + 11}` })
+				}))
+			}, true).length, 1);
+		});
+
 	});
 
 });
