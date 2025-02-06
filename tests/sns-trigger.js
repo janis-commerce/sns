@@ -176,7 +176,8 @@ describe('SnsTrigger', () => {
 					foo: 'bar'
 				},
 				attributes: {
-					foo: 'bar'
+					foo: 'bar',
+					arrayAttribute: ['option1', 'option2']
 				},
 				subject: 'test',
 				messageGroupId: 'group1',
@@ -198,6 +199,10 @@ describe('SnsTrigger', () => {
 					foo: {
 						DataType: 'String',
 						StringValue: 'bar'
+					},
+					arrayAttribute: {
+						DataType: 'String.Array',
+						StringValue: JSON.stringify(['option1', 'option2'])
 					}
 				},
 				Subject: 'test',
