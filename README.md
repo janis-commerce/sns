@@ -28,6 +28,8 @@ npm install --dev @aws-sdk/client-sns@3
 
 > The event `content` will be JSON-stringified before sending
 
+> The event `attributes` can be either Strings or Arrays.  It's important to note that using other data types may cause issues or inconsistencies in the implemented filter policies. Ensure that the values provided for the attributes are always of the expected type to avoid errors in message processing.
+
 #### Publish single event
 
 ```js
@@ -41,7 +43,7 @@ const result = await snsTrigger.publishEvent('topicName', {
 	},
 	attributes: {
 		source: 'user',
-		platform: 'mobile'
+		platforms: ['mobile', 'web']
 	}
 });
 
