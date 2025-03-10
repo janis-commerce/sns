@@ -4,8 +4,6 @@ require('lllog')('none');
 const sinon = require('sinon');
 const assert = require('assert');
 
-// const { v4: uuidv4 } = uuid; // Extrae la función v4
-// const uuid = require('uuid');
 const { mockClient } = require('aws-sdk-client-mock');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { SNSClient, PublishCommand, PublishBatchCommand } = require('@aws-sdk/client-sns');
@@ -14,6 +12,7 @@ const { RAMClient, ListResourcesCommand } = require('@aws-sdk/client-ram');
 const { STSClient, AssumeRoleCommand } = require('@aws-sdk/client-sts');
 
 const { SnsTrigger } = require('../lib');
+const ParameterStore = require('../lib/helpers/parameter-store');
 
 describe('SnsTrigger', () => {
 
@@ -24,13 +23,17 @@ describe('SnsTrigger', () => {
 	let stsMock;
 	let clock;
 
+	const fakeDate = new Date(2025, 2, 6);
+
+	const randomId = 'fake-id';
+
 	const parameterName = 'shared/internal-storage';
 
 	const sampleTopicArn = 'arn:aws:sns:us-east-1:123456789012:MyTopic';
 
 	const parameterNameStoreArn = `arn:aws:ssm:us-east-1:12345678:parameter/${parameterName}`;
 
-	// const s3ContentPath = 'topics/defaultClient/service-name/MyTopic/2025/03/06/3e3c0305-4508-422e-bc69-7027dfaaa8be.json';
+	const s3ContentPath = `topics/defaultClient/service-name/MyTopic/2025/03/06/${randomId}.json`;
 
 	const defaultSnsMessageAttributes = {
 		topicName: {
@@ -82,9 +85,66 @@ describe('SnsTrigger', () => {
 		}
 	];
 
+	const assertListResourceCommand = () => {
+		assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand, {
+			resourceOwner: 'OTHER-ACCOUNTS'
+		}, true).length, 1);
+	};
+
+	const assertGetParameterCommand = () => {
+		assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand, {
+			Name: parameterNameStoreArn,
+			WithDecryption: true
+		}, true).length, 1);
+	};
+
+	const assertAssumeRoleCommand = (callsNumber = 1) => {
+		assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand, {
+			RoleArn: buckets[0].roleArn,
+			RoleSessionName: 'service-name',
+			DurationSeconds: 1800
+		}, true).length, callsNumber);
+	};
+
+	const assertPutObjectCommand = (body, bucketName = buckets[0].bucketName) => {
+		assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand, {
+			Bucket: bucketName,
+			Key: s3ContentPath,
+			Body: JSON.stringify(body)
+		}, true).length, 1);
+	};
+
+	const assertPublichBatchCommand = () => {
+		assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand, {
+			TopicArn: sampleTopicArn,
+			PublishBatchRequestEntries: [
+				{
+					Id: '1',
+					MessageAttributes: {
+						'janis-client': {
+							DataType: 'String',
+							StringValue: 'defaultClient'
+						},
+						topicName: {
+							DataType: 'String',
+							StringValue: 'MyTopic'
+						}
+					},
+					Message: JSON.stringify({ s3ContentPath, bar: 'bar' })
+				}
+			]
+		}, true).length, 1);
+	};
+
 	beforeEach(() => {
-		const fakeDate = new Date(2025, 2, 6);
+		ssmMock = mockClient(SSMClient);
+		snsMock = mockClient(SNSClient);
+		ramMock = mockClient(RAMClient);
+		s3Mock = mockClient(S3Client);
+		stsMock = mockClient(STSClient);
+		process.env.JANIS_SERVICE_NAME = 'service-name';
 		clock = sinon.useFakeTimers(fakeDate.getTime());
+
 	});
 
 	afterEach(() => {
@@ -96,16 +156,24 @@ describe('SnsTrigger', () => {
 		clock.restore();
 	});
 
-	beforeEach(() => {
-		ssmMock = mockClient(SSMClient);
-		snsMock = mockClient(SNSClient);
-		ramMock = mockClient(RAMClient);
-		s3Mock = mockClient(S3Client);
-		stsMock = mockClient(STSClient);
-		process.env.JANIS_SERVICE_NAME = 'service-name';
-	});
-
 	describe('publishEvent', () => {
+
+		beforeEach(() => {
+			ssmMock = mockClient(SSMClient);
+			snsMock = mockClient(SNSClient);
+			ramMock = mockClient(RAMClient);
+			s3Mock = mockClient(S3Client);
+			stsMock = mockClient(STSClient);
+			process.env.JANIS_SERVICE_NAME = 'service-name';
+		});
+
+		afterEach(() => {
+			snsMock.restore();
+			ssmMock.restore();
+			ramMock.restore();
+			s3Mock.restore();
+			stsMock.restore();
+		});
 
 		const singleEventResponse = {
 			messageId: '4ac0a219-1122-33b3-4445-5556666d734d'
@@ -290,6 +358,19 @@ describe('SnsTrigger', () => {
 
 	describe('publishEvents', () => {
 
+		beforeEach(() => {
+			this.snsTrigger = new SnsTrigger();
+			sinon.stub(this.snsTrigger, 'randomId').get(() => randomId);
+		});
+
+		afterEach(() => {
+			sinon.restore();
+		});
+
+		afterEach(() => {
+			ParameterStore.clearCache();
+		});
+
 		const multiEventResponse = {
 			successCount: 1,
 			failedCount: 1,
@@ -411,112 +492,223 @@ describe('SnsTrigger', () => {
 			}, true).length, 1);
 		});
 
-		// it('Should process events that are greater than 256KB', async () => {
+		it('Should skip if fails if unable to get parameter from parametter store with arn', async () => {
 
-		// 	snsMock.on(PublishBatchCommand).resolves({
-		// 		Successful: [
-		// 			{ MessageId: '4ac0a219-1122-33b3-4445-5556666d734d' },
-		// 			{ MessageId: '4ac0a219-1122-33b3-4445-5556666d735d' }
-		// 		]
-		// 	});
+			stsMock.on(AssumeRoleCommand);
+			s3Mock.on(PutObjectCommand);
+			snsMock.on(PublishBatchCommand);
 
-		// 	ramMock.on(ListResourcesCommand).resolves({
-		// 		resources: [{ arn: parameterNameStoreArn }]
-		// 	});
+			ramMock.on(ListResourcesCommand).resolves({
+				resources: [{ arn: parameterNameStoreArn }]
+			});
 
-		// 	ssmMock.on(GetParameterCommand).resolves({
-		// 		Parameter: {
-		// 			Value: JSON.stringify(buckets)
-		// 		}
-		// 	});
+			ssmMock.on(GetParameterCommand).rejects(new Error('SSM Internal Error'));
 
-		// 	stsMock.on(AssumeRoleCommand).resolves({
-		// 		Credentials: {
-		// 			AccessKeyId: 'accessKeyIdTest',
-		// 			SecretAccessKey: 'secretAccessKeyTest',
-		// 			SessionToken: 'sessionTokenTest'
-		// 		}
-		// 	});
+			const snsTrigger = new SnsTrigger();
 
-		// 	s3Mock.on(PutObjectCommand).resolves({
-		// 		ETag: '5d41402abc4b2a76b9719d911017c590'
-		// 	});
+			snsTrigger.session = { clientCode: 'defaultClient' };
 
-		// 	const partiallySentResponse = {
-		// 		successCount: 2,
-		// 		failedCount: 0,
-		// 		outputs: [
-		// 			{ success: true, messageId: '4ac0a219-1122-33b3-4445-5556666d734d' },
-		// 			{ success: true, messageId: '4ac0a219-1122-33b3-4445-5556666d735d' }
-		// 		]
-		// 	};
+			const result = await assert.rejects(snsTrigger.publishEvents(sampleTopicArn, [
+				{
+					payloadFixedProperties: ['bar'],
+					content: {
+						bar: 'bar',
+						foo: 'x'.repeat(256 * 1024)
+					}
+				}
+			]));
 
-		// 	const snsTrigger = new SnsTrigger();
+			assert.deepStrictEqual(result, undefined);
+			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
+			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 1);
+			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 0);
+			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
+			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 0);
 
-		// 	snsTrigger.session = { clientCode: 'defaultClient' };
+			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand, {
+				resourceOwner: 'OTHER-ACCOUNTS'
+			}, true).length, 1);
 
-		// 	const result = await snsTrigger.publishEvents(sampleTopicArn, [
-		// 		{
-		// 			payloadFixedProperties: ['bar'],
-		// 			content: { foo: 'bar' }
-		// 		},
-		// 		{
-		// 			payloadFixedProperties: ['bar'],
-		// 			content: {
-		// 				bar: 'bar',
-		// 				foo: 'x'.repeat(256 * 1024)
-		// 			}
-		// 		}
-		// 	]);
+			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand, {
+				Name: parameterNameStoreArn,
+				WithDecryption: true
+			}, true).length, 1);
 
-		// 	assert.deepStrictEqual(result, partiallySentResponse);
-		// 	assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 1);
-		// 	assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
-		// 	assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 1);
-		// 	assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 1);
-		// 	assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 1);
+			assert.deepEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
 
-		// 	assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand, {
-		// 		resourceOwner: 'OTHER-ACCOUNTS'
-		// 	}, true).length, 1);
+		});
 
-		// 	assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand, {
-		// 		Name: parameterNameStoreArn,
-		// 		WithDecryption: true
-		// 	}, true).length, 1);
+		it('Should skip event if unable to find resources with the parameter name in the ARN', async () => {
 
-		// 	assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand, {
-		// 		RoleArn: buckets[0].roleArn,
-		// 		RoleSessionName: 'service-name',
-		// 		DurationSeconds: 1800
-		// 	}, true).length, 1);
+			stsMock.on(AssumeRoleCommand);
+			s3Mock.on(PutObjectCommand);
+			snsMock.on(PublishBatchCommand);
+			ssmMock.on(GetParameterCommand);
 
-		// 	// assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand, {
-		// 	// 	Bucket: buckets[0].bucketName,
-		// 	// 	Key: s3ContentPath,
-		// 	// 	Body: JSON.stringify({
-		// 	// 		bar: 'bar',
-		// 	// 		foo: 'x'.repeat(256 * 1024)
-		// 	// 	})
-		// 	// }, true).length, 1);
+			ramMock.on(ListResourcesCommand).resolves({
+				resources: [{ arn: 'other-arn-without-the-parameter-name' }]
+			});
 
-		// });
+			const snsTrigger = new SnsTrigger();
 
-		it('Should save the event content to S3 if it is greater than 256KB', async () => {
+			snsTrigger.session = { clientCode: 'defaultClient' };
+
+			const result = await assert.rejects(snsTrigger.publishEvents(sampleTopicArn, [
+				{
+					payloadFixedProperties: ['bar'],
+					content: {
+						bar: 'bar',
+						foo: 'x'.repeat(256 * 1024)
+					}
+				}
+			]));
+
+			assert.deepStrictEqual(result, undefined);
+			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
+			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 0);
+			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 0);
+			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
+			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 0);
+
+			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand, {
+				resourceOwner: 'OTHER-ACCOUNTS'
+			}, true).length, 1);
+
+			assert.deepEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
+
+		});
+
+		it('Should skip events if fail to retrieve credentials to assume role', async () => {
+
+			snsMock.on(PublishBatchCommand);
+			s3Mock.on(PutObjectCommand);
+
+			ramMock.on(ListResourcesCommand).resolves({
+				resources: [{ arn: parameterNameStoreArn }]
+			});
+
+			ssmMock.on(GetParameterCommand).resolves({
+				Parameter: {
+					Value: JSON.stringify(buckets)
+				}
+			});
+
+			stsMock.on(AssumeRoleCommand)
+				.rejects(new Error('Not authorized'));
+
+			const snsTrigger = new SnsTrigger();
+
+			snsTrigger.session = { clientCode: 'defaultClient' };
+
+			const result = await assert.rejects(snsTrigger.publishEvents(sampleTopicArn, [
+				{
+					payloadFixedProperties: ['bar'],
+					content: {
+						bar: 'bar',
+						foo: 'x'.repeat(256 * 1024)
+					}
+				}
+			]));
+
+			assert.deepStrictEqual(result, undefined);
+			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
+			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 1);
+			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 2);
+			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
+			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 1);
+
+			assertListResourceCommand();
+
+			assertGetParameterCommand();
+
+			assertAssumeRoleCommand(2);
+
+		});
+
+		it('Should upload a payload to the provisional S3 bucket if the default bucket upload fails', async () => {
+
+			const content = {
+				bar: 'bar',
+				foo: 'x'.repeat(256 * 1024)
+			};
 
 			const partiallySentResponse = {
 				successCount: 1,
 				failedCount: 0,
 				outputs: [
-					{ success: true, messageId: '4ac0a219-1122-33b3-4445-5556666d734d' }
+					{
+						success: true,
+						messageId: '4ac0a219-1122-33b3-4445-5556666d734d'
+					}
 				]
 			};
+
+			ramMock.on(ListResourcesCommand).resolves({
+				resources: [{ arn: parameterNameStoreArn }]
+			});
+
+			ssmMock.on(GetParameterCommand).resolves({
+				Parameter: {
+					Value: JSON.stringify(buckets)
+				}
+			});
+
+			stsMock.on(AssumeRoleCommand).resolves({
+				Credentials: credentials
+			});
+
+			s3Mock.on(PutObjectCommand)
+				.rejectsOnce(new Error('Error fetching S3'))
+				.resolvesOnce({
+					ETag: '5d41402abc4b2a76b9719d911017c590'
+				});
 
 			snsMock.on(PublishBatchCommand).resolves({
 				Successful: [
 					{ MessageId: '4ac0a219-1122-33b3-4445-5556666d734d' }
 				]
 			});
+
+			this.snsTrigger.session = { clientCode: 'defaultClient' };
+
+			const result = await this.snsTrigger.publishEvents(sampleTopicArn, [
+				{
+					content,
+					payloadFixedProperties: ['bar']
+				}
+			]);
+
+			assert.deepStrictEqual(result, partiallySentResponse);
+			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
+			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 1);
+			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 2);
+			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 2);
+			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 1);
+
+			assertListResourceCommand();
+
+			assertGetParameterCommand();
+
+			assertAssumeRoleCommand(2);
+
+			assertPutObjectCommand(content, buckets[0].bucketName);
+
+			assertPutObjectCommand(content, buckets[1].bucketName);
+
+		});
+
+		it('Should save the event content in S3 if it is greater than 256KB', async () => {
+
+			const partiallySentResponse = {
+				successCount: 1,
+				failedCount: 0,
+				outputs: [
+					{
+						success: true,
+						messageId: '4ac0a219-1122-33b3-4445-5556666d734d'
+					}
+				]
+			};
 
 			ramMock.on(ListResourcesCommand).resolves({
 				resources: [{ arn: parameterNameStoreArn }]
@@ -536,41 +728,43 @@ describe('SnsTrigger', () => {
 				ETag: '5d41402abc4b2a76b9719d911017c590'
 			});
 
-			const snsTrigger = new SnsTrigger();
+			snsMock.on(PublishBatchCommand).resolves({
+				Successful: [
+					{ MessageId: '4ac0a219-1122-33b3-4445-5556666d734d' }
+				]
+			});
 
-			snsTrigger.session = { clientCode: 'defaultClient' };
+			this.snsTrigger.session = { clientCode: 'defaultClient' };
 
-			const result = await snsTrigger.publishEvents(sampleTopicArn, [
+			const content = {
+				bar: 'bar',
+				foo: 'x'.repeat(256 * 1024)
+			};
+
+			const result = await this.snsTrigger.publishEvents(sampleTopicArn, [
 				{
 					payloadFixedProperties: ['bar'],
-					content: {
-						bar: 'bar',
-						foo: 'x'.repeat(256 * 1024)
-					}
+					content
 				}
 			]);
 
 			assert.deepStrictEqual(result, partiallySentResponse);
-			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 1);
 			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
 			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 1);
-			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 1);
 			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 1);
+			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 1);
+			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 1);
 
-			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand, {
-				resourceOwner: 'OTHER-ACCOUNTS'
-			}, true).length, 1);
+			assertListResourceCommand();
 
-			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand, {
-				Name: parameterNameStoreArn,
-				WithDecryption: true
-			}, true).length, 1);
+			assertGetParameterCommand();
 
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand, {
-				RoleArn: buckets[0].roleArn,
-				RoleSessionName: 'service-name',
-				DurationSeconds: 1800
-			}, true).length, 1);
+			assertAssumeRoleCommand();
+
+			assertPutObjectCommand(content);
+
+			assertPublichBatchCommand();
+
 		});
 
 		it('Should split events in batches not greater than 256KB', async () => {
@@ -588,8 +782,7 @@ describe('SnsTrigger', () => {
 					}]
 				});
 
-			const snsTrigger = new SnsTrigger();
-			const result = await snsTrigger.publishEvents(sampleTopicArn, [
+			const result = await this.snsTrigger.publishEvents(sampleTopicArn, [
 				{
 					content: {
 						foo: 'x'.repeat(150 * 1024)
@@ -603,8 +796,13 @@ describe('SnsTrigger', () => {
 			]);
 
 			assert.deepStrictEqual(result, multiEventResponse);
-
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 2);
+			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 0);
+			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 0);
+			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 0);
+			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
+			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 2);
+
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand, {
 				TopicArn: sampleTopicArn,
 				PublishBatchRequestEntries: [
@@ -617,6 +815,7 @@ describe('SnsTrigger', () => {
 					}
 				]
 			}, true).length, 1);
+
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand, {
 				TopicArn: sampleTopicArn,
 				PublishBatchRequestEntries: [
