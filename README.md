@@ -29,14 +29,19 @@ npm install --dev @aws-sdk/client-sns@3
 > The event `content` will be JSON-stringified before sending
 
 > The event `attributes` can be either Strings or Arrays.  It's important to note that using other data types may cause issues or inconsistencies in the implemented filter policies. Ensure that the values provided for the attributes are always of the expected type to avoid errors in message processing.
+
+> The `payloadFixedProperties` event must be an array of strings containing the properties that must be mandatorily sent in the content. This is to improve error management, as these properties will allow us to identify which data failed and make a decision accordingly.
+
 ***Note: This behavior applies from version 1.1.0 onward.***
+
+!important: The session is required to obtain the `clientCode` and construct the `contentS3Pat`h for payloads that exceed the maximum SNS limit.
 
 #### Publish single event
 
 ```js
 const { SnsTrigger } = require('@janiscommerce/sns');
 
-const snsTrigger = new SnsTrigger();
+const snsTrigger = this.session.getSessionInstance(SnsTrigger);
 
 const result = await snsTrigger.publishEvent('topicName', {
 	content: {
@@ -45,7 +50,8 @@ const result = await snsTrigger.publishEvent('topicName', {
 	attributes: {
 		source: 'user',
 		platforms: ['mobile', 'web']
-	}
+	},
+	payloadFixedProperties: ['id']
 });
 
 /**
@@ -65,7 +71,7 @@ const result = await snsTrigger.publishEvent('topicName', {
 ```js
 const { SnsTrigger } = require('@janiscommerce/sns');
 
-const snsTrigger = new SnsTrigger();
+const snsTrigger = this.session.getSessionInstance(SnsTrigger);
 
 const result = await snsTrigger.publishEvents('topicName', [
 	{
@@ -75,7 +81,8 @@ const result = await snsTrigger.publishEvents('topicName', [
 		attributes: {
 			source: 'user',
 			platform: 'mobile'
-		}
+		},
+		payloadFixedProperties: ['id']
 	},
 	{
 		content: {
@@ -84,7 +91,8 @@ const result = await snsTrigger.publishEvents('topicName', [
 		attributes: {
 			source: 'user',
 			platform: 'mobile'
-		}
+		},
+		payloadFixedProperties: ['id']
 	}
 ]);
 
