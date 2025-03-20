@@ -30,7 +30,7 @@ describe('SnsTrigger', () => {
 	const sampleTopicFifo = `${sampleTopicArn}.fifo`;
 	const parameterNameStoreArn = `arn:aws:ssm:us-east-1:12345678:parameter/${parameterName}`;
 	const roleArn = 'arn:aws:iam::1234567890:role/defaultRoleName';
-	const s3ContentPath = `topics/defaultClient/service-name/MyTopic/2025/03/06/${randomId}.json`;
+	const contentS3Path = `topics/defaultClient/service-name/MyTopic/2025/03/06/${randomId}.json`;
 
 	const credentials = {
 		AccessKeyId: 'accessKeyIdTest',
@@ -76,7 +76,7 @@ describe('SnsTrigger', () => {
 	const assertPutObjectCommand = (body, bucketName = buckets[0].bucketName) => {
 		assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand, {
 			Bucket: bucketName,
-			Key: s3ContentPath,
+			Key: contentS3Path,
 			Body: JSON.stringify(body)
 		}, true).length, 1);
 	};
@@ -312,7 +312,7 @@ describe('SnsTrigger', () => {
 			assert.deepStrictEqual(snsMock.commandCalls(PublishCommand).length, 1);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishCommand, {
 				TopicArn: sampleTopicFifo,
-				Message: JSON.stringify({ s3ContentPath, bar: 'bar' }),
+				Message: JSON.stringify({ contentS3Path, bar: 'bar' }),
 				MessageAttributes: {
 					'janis-client': {
 						DataType: 'String',
@@ -913,7 +913,7 @@ describe('SnsTrigger', () => {
 								StringValue: 'MyTopic'
 							}
 						},
-						Message: JSON.stringify({ s3ContentPath, bar: 'bar' })
+						Message: JSON.stringify({ contentS3Path, bar: 'bar' })
 					}
 				]
 			}, true).length, 1);
