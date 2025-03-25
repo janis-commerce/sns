@@ -34,7 +34,7 @@ npm install --dev @aws-sdk/client-sns@3
 
 ***Note: This behavior applies from version 1.1.0 onward.***
 
-!important: The session is required to obtain the `clientCode` and construct the `contentS3Pat`h for payloads that exceed the maximum SNS limit.
+!important: The session is required to obtain the `clientCode` and construct the `contentS3Path` for payloads that exceed the maximum SNS limit.
 
 #### Publish single event
 
