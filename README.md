@@ -30,11 +30,13 @@ npm install --dev @aws-sdk/client-sns@3
 
 > The event `attributes` can be either Strings or Arrays.  It's important to note that using other data types may cause issues or inconsistencies in the implemented filter policies. Ensure that the values provided for the attributes are always of the expected type to avoid errors in message processing.
 
-> The `payloadFixedProperties` event must be an array of strings containing the properties that must be mandatorily sent in the content. This is to improve error management, as these properties will allow us to identify which data failed and make a decision accordingly.
-
 ***Note: This behavior applies from version 1.1.0 onward.***
 
-!important: The session is required to obtain the `clientCode` and construct the `contentS3Path` for payloads that exceed the maximum SNS limit.
+> The `payloadFixedProperties` event (available since v1.0.3) must be an array of strings containing the properties that must be mandatorily sent in the content. This is to improve error management, as these properties will allow us to identify which data failed and make a decision accordingly.
+
+### Important Changes from Version ***1.0.3*** to ***Latest***
+
+The session is required to obtain the `clientCode` and construct the `contentS3Path` for payloads that exceed the maximum SNS limit.
 
 #### Publish single event
 
