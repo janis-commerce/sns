@@ -9,7 +9,6 @@ const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { SNSClient, PublishCommand, PublishBatchCommand } = require('@aws-sdk/client-sns');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const { RAMClient, ListResourcesCommand } = require('@aws-sdk/client-ram');
-const { STSClient, AssumeRoleCommand } = require('@aws-sdk/client-sts');
 
 const { SnsTrigger } = require('../lib');
 const ParameterStore = require('../lib/helpers/parameter-store');
@@ -20,7 +19,6 @@ describe('SnsTrigger', () => {
 	let ssmMock;
 	let ramMock;
 	let s3Mock;
-	let stsMock;
 	let clock;
 
 	const fakeDate = new Date(2025, 2, 6);
@@ -29,25 +27,16 @@ describe('SnsTrigger', () => {
 	const sampleTopicArn = 'arn:aws:sns:us-east-1:123456789012:MyTopic';
 	const sampleTopicFifo = `${sampleTopicArn}.fifo`;
 	const parameterNameStoreArn = `arn:aws:ssm:us-east-1:12345678:parameter/${parameterName}`;
-	const roleArn = 'arn:aws:iam::1234567890:role/defaultRoleName';
 	const contentS3Path = `topics/defaultClient/service-name/MyTopic/2025/03/06/${randomId}.json`;
-
-	const credentials = {
-		AccessKeyId: 'accessKeyIdTest',
-		SecretAccessKey: 'secretAccessKeyTest',
-		SessionToken: 'sessionTokenTest'
-	};
 
 	const buckets = [
 		{
 			bucketName: 'sample-bucket-name-us-east-1',
-			roleArn,
 			region: 'us-east-1',
 			default: true
 		},
 		{
 			bucketName: 'sample-bucket-name-us-west-1',
-			roleArn,
 			region: 'us-west-1'
 		}
 	];
@@ -65,14 +54,6 @@ describe('SnsTrigger', () => {
 		}, true).length, 1);
 	};
 
-	const assertAssumeRoleCommand = (callsNumber = 1) => {
-		assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand, {
-			RoleArn: buckets[0].roleArn,
-			RoleSessionName: 'service-name',
-			DurationSeconds: 1800
-		}, true).length, callsNumber);
-	};
-
 	const assertPutObjectCommand = (body, bucketName = buckets[0].bucketName) => {
 		assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand, {
 			Bucket: bucketName,
@@ -86,7 +67,6 @@ describe('SnsTrigger', () => {
 		snsMock = mockClient(SNSClient);
 		ramMock = mockClient(RAMClient);
 		s3Mock = mockClient(S3Client);
-		stsMock = mockClient(STSClient);
 		clock = sinon.useFakeTimers(fakeDate.getTime());
 
 		this.snsTrigger = new SnsTrigger();
@@ -102,7 +82,6 @@ describe('SnsTrigger', () => {
 		ssmMock.restore();
 		ramMock.restore();
 		s3Mock.restore();
-		stsMock.restore();
 		clock.restore();
 	});
 
@@ -113,7 +92,6 @@ describe('SnsTrigger', () => {
 			snsMock = mockClient(SNSClient);
 			ramMock = mockClient(RAMClient);
 			s3Mock = mockClient(S3Client);
-			stsMock = mockClient(STSClient);
 			process.env.JANIS_SERVICE_NAME = 'service-name';
 		});
 
@@ -122,7 +100,6 @@ describe('SnsTrigger', () => {
 			ssmMock.restore();
 			ramMock.restore();
 			s3Mock.restore();
-			stsMock.restore();
 		});
 
 		const singleEventResponse = {
@@ -275,7 +252,7 @@ describe('SnsTrigger', () => {
 			assert.deepStrictEqual(result, singleEventResponse);
 		});
 
-		it('Should publish a single event with s3 content path if it is greater than 256KB (FIFO SQS)', async () => {
+		it('Should publish a single event with s3 content path if it is greater than 256KB (FIFO SNS)', async () => {
 
 			ramMock.on(ListResourcesCommand).resolves({
 				resources: [{ arn: parameterNameStoreArn }]
@@ -285,10 +262,6 @@ describe('SnsTrigger', () => {
 				Parameter: {
 					Value: JSON.stringify(buckets)
 				}
-			});
-
-			stsMock.on(AssumeRoleCommand).resolves({
-				Credentials: credentials
 			});
 
 			s3Mock.on(PutObjectCommand).resolves({
@@ -310,9 +283,22 @@ describe('SnsTrigger', () => {
 
 			assert.deepStrictEqual(result, singleEventFifoResponse);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishCommand).length, 1);
+
+			assertPutObjectCommand({
+				bar: 'bar',
+				foo: 'x'.repeat(256 * 1024)
+			});
+
 			assert.deepStrictEqual(snsMock.commandCalls(PublishCommand, {
 				TopicArn: sampleTopicFifo,
-				Message: JSON.stringify({ contentS3Path, bar: 'bar' }),
+				Message: JSON.stringify({
+					contentS3Location: {
+						path: contentS3Path,
+						bucketName: buckets[0].bucketName,
+						region: buckets[0].region
+					},
+					bar: 'bar'
+				}),
 				MessageAttributes: {
 					'janis-client': {
 						DataType: 'String',
@@ -382,7 +368,6 @@ describe('SnsTrigger', () => {
 
 		it('Should fail if session with clientCode is missing', async () => {
 
-			stsMock.on(AssumeRoleCommand);
 			s3Mock.on(PutObjectCommand);
 			snsMock.on(PublishCommand);
 			ssmMock.on(GetParameterCommand);
@@ -403,7 +388,6 @@ describe('SnsTrigger', () => {
 			assert.deepStrictEqual(result, undefined);
 			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 0);
 			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 0);
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 0);
 			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishCommand).length, 0);
 			assert.deepEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
@@ -435,8 +419,8 @@ describe('SnsTrigger', () => {
 				},
 				{
 					success: false,
-					errorCode: 'SQS001',
-					errorMessage: 'SQS Failed'
+					errorCode: 'SNS001',
+					errorMessage: 'SNS Failed'
 				}
 			]
 		};
@@ -452,8 +436,8 @@ describe('SnsTrigger', () => {
 				},
 				{
 					success: false,
-					errorCode: 'SQS001',
-					errorMessage: 'SQS Failed'
+					errorCode: 'SNS001',
+					errorMessage: 'SNS Failed'
 				}
 			]
 		};
@@ -466,8 +450,8 @@ describe('SnsTrigger', () => {
 				],
 				Failed: [
 					{
-						Code: 'SQS001',
-						Message: 'SQS Failed'
+						Code: 'SNS001',
+						Message: 'SNS Failed'
 					}
 				]
 			});
@@ -529,8 +513,8 @@ describe('SnsTrigger', () => {
 				],
 				Failed: [
 					{
-						Code: 'SQS001',
-						Message: 'SQS Failed'
+						Code: 'SNS001',
+						Message: 'SNS Failed'
 					}
 				]
 			});
@@ -583,7 +567,6 @@ describe('SnsTrigger', () => {
 
 		it('Should reject if fails retrieve parameter from ssm parameter store', async () => {
 
-			stsMock.on(AssumeRoleCommand);
 			s3Mock.on(PutObjectCommand);
 			snsMock.on(PublishBatchCommand);
 
@@ -606,7 +589,6 @@ describe('SnsTrigger', () => {
 			assert.deepStrictEqual(result, undefined);
 			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
 			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 1);
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 0);
 			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 0);
 
@@ -641,10 +623,6 @@ describe('SnsTrigger', () => {
 				}
 			});
 
-			stsMock.on(AssumeRoleCommand).resolves({
-				Credentials: credentials
-			});
-
 			const result = await assert.rejects(this.snsTrigger.publishEvents(sampleTopicArn, [
 				{
 					payloadFixedProperties: ['bar'],
@@ -653,19 +631,17 @@ describe('SnsTrigger', () => {
 						foo: 'x'.repeat(256 * 1024)
 					}
 				}
-			]), { message: 'Failed to upload to both default and provisional buckets' });
+			]), { message: 'Failed to upload to all provided buckets' });
 
 			assert.deepStrictEqual(result, undefined);
 			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
 			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 1);
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 2);
 			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 2);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 0);
 		});
 
 		it('Should reject if fails retrieve parameter name from ram resources', async () => {
 
-			stsMock.on(AssumeRoleCommand);
 			s3Mock.on(PutObjectCommand);
 			snsMock.on(PublishBatchCommand);
 			ssmMock.on(GetParameterCommand);
@@ -684,7 +660,6 @@ describe('SnsTrigger', () => {
 			assert.deepStrictEqual(result, undefined);
 			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
 			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 0);
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 0);
 			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 0);
 			assertListResourceCommand();
@@ -692,7 +667,6 @@ describe('SnsTrigger', () => {
 
 		it('Should reject if cannot find resources with the parameter name in the ARN', async () => {
 
-			stsMock.on(AssumeRoleCommand);
 			s3Mock.on(PutObjectCommand);
 			snsMock.on(PublishBatchCommand);
 			ssmMock.on(GetParameterCommand);
@@ -714,52 +688,10 @@ describe('SnsTrigger', () => {
 			assert.deepStrictEqual(result, undefined);
 			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
 			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 0);
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 0);
 			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 0);
 			assert.deepEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
 			assertListResourceCommand();
-
-		});
-
-		it('Should reject if fail to retrieve credentials to sts assume role', async () => {
-
-			snsMock.on(PublishBatchCommand);
-			s3Mock.on(PutObjectCommand);
-
-			ramMock.on(ListResourcesCommand).resolves({
-				resources: [{ arn: parameterNameStoreArn }]
-			});
-
-			ssmMock.on(GetParameterCommand).resolves({
-				Parameter: {
-					Value: JSON.stringify(buckets)
-				}
-			});
-
-			stsMock.on(AssumeRoleCommand)
-				.rejects(new Error('Not authorized'));
-
-			const result = await assert.rejects(this.snsTrigger.publishEvents(sampleTopicArn, [
-				{
-					payloadFixedProperties: ['bar'],
-					content: {
-						bar: 'bar',
-						foo: 'x'.repeat(256 * 1024)
-					}
-				}
-			]), { message: `Error while trying to assume role arn ${roleArn}: Not authorized` });
-
-			assert.deepStrictEqual(result, undefined);
-			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
-			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 1);
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 1);
-			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
-			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 0);
-
-			assertListResourceCommand();
-			assertGetParameterCommand();
-			assertAssumeRoleCommand(1);
 
 		});
 
@@ -791,10 +723,6 @@ describe('SnsTrigger', () => {
 				}
 			});
 
-			stsMock.on(AssumeRoleCommand).resolves({
-				Credentials: credentials
-			});
-
 			s3Mock.on(PutObjectCommand)
 				.rejectsOnce(new Error('Error fetching S3'))
 				.resolvesOnce({
@@ -819,15 +747,12 @@ describe('SnsTrigger', () => {
 			assert.deepStrictEqual(result, partiallySentResponse);
 			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
 			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 1);
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 2);
 			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 2);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 1);
 
 			assertListResourceCommand();
 
 			assertGetParameterCommand();
-
-			assertAssumeRoleCommand(2);
 
 			assertPutObjectCommand(content, buckets[0].bucketName);
 
@@ -858,10 +783,6 @@ describe('SnsTrigger', () => {
 				}
 			});
 
-			stsMock.on(AssumeRoleCommand).resolves({
-				Credentials: credentials
-			});
-
 			s3Mock.on(PutObjectCommand).resolves({
 				ETag: '5d41402abc4b2a76b9719d911017c590'
 			});
@@ -889,13 +810,11 @@ describe('SnsTrigger', () => {
 			assert.deepStrictEqual(result, partiallySentResponse);
 			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 1);
 			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 1);
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 1);
 			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 1);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 1);
 
 			assertListResourceCommand();
 			assertGetParameterCommand();
-			assertAssumeRoleCommand();
 			assertPutObjectCommand(content);
 
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand, {
@@ -913,7 +832,14 @@ describe('SnsTrigger', () => {
 								StringValue: 'MyTopic'
 							}
 						},
-						Message: JSON.stringify({ contentS3Path, bar: 'bar' })
+						Message: JSON.stringify({
+							contentS3Location: {
+								path: contentS3Path,
+								bucketName: buckets[0].bucketName,
+								region: buckets[0].region
+							},
+							bar: 'bar'
+						})
 					}
 				]
 			}, true).length, 1);
@@ -930,8 +856,8 @@ describe('SnsTrigger', () => {
 				})
 				.resolvesOnce({
 					Failed: [{
-						Code: 'SQS001',
-						Message: 'SQS Failed'
+						Code: 'SNS001',
+						Message: 'SNS Failed'
 					}]
 				});
 
@@ -952,7 +878,6 @@ describe('SnsTrigger', () => {
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 2);
 			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 0);
 			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 0);
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 0);
 			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 2);
 
@@ -1013,8 +938,8 @@ describe('SnsTrigger', () => {
 				})
 				.resolvesOnce({
 					Failed: [{
-						Code: 'SQS001',
-						Message: 'SQS Failed'
+						Code: 'SNS001',
+						Message: 'SNS Failed'
 					}]
 				});
 
@@ -1068,17 +993,16 @@ describe('SnsTrigger', () => {
 
 		});
 
-		it('Should reject if the que url format is not valid', async () => {
+		it('Should reject if the arn format is not valid', async () => {
 
-			stsMock.on(AssumeRoleCommand);
 			s3Mock.on(PutObjectCommand);
 			snsMock.on(PublishBatchCommand);
 			ssmMock.on(GetParameterCommand);
 			ramMock.on(ListResourcesCommand);
 
-			const invalidSqsUrl = 'arn:invalid-arn';
+			const invalidSnsArn = 'arn:invalid-arn';
 
-			const result = await assert.rejects(this.snsTrigger.publishEvents(invalidSqsUrl, [
+			const result = await assert.rejects(this.snsTrigger.publishEvents(invalidSnsArn, [
 				{
 					payloadFixedProperties: ['bar'],
 					content: {
@@ -1086,12 +1010,11 @@ describe('SnsTrigger', () => {
 						foo: 'x'.repeat(256 * 1024)
 					}
 				}
-			]), { message: `Invalid SNS ARN: ${invalidSqsUrl}` });
+			]), { message: `Invalid SNS ARN: ${invalidSnsArn}` });
 
 			assert.deepStrictEqual(result, undefined);
 			assert.deepStrictEqual(ramMock.commandCalls(ListResourcesCommand).length, 0);
 			assert.deepStrictEqual(ssmMock.commandCalls(GetParameterCommand).length, 0);
-			assert.deepStrictEqual(stsMock.commandCalls(AssumeRoleCommand).length, 0);
 			assert.deepStrictEqual(s3Mock.commandCalls(PutObjectCommand).length, 0);
 			assert.deepStrictEqual(snsMock.commandCalls(PublishBatchCommand).length, 0);
 
