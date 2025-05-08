@@ -401,7 +401,7 @@ describe('SnsTrigger', () => {
 				foo: 'x'.repeat(256 * 1024)
 			};
 
-			const customContentS3Path = `topics/storage/service-name/MyTopic/2025/03/06/${randomId}.json`;
+			const customContentS3Path = `topics/core/service-name/MyTopic/2025/03/06/${randomId}.json`;
 
 			this.snsTrigger.session = null;
 
