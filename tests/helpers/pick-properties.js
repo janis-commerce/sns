@@ -13,7 +13,7 @@ describe('pickProperties', () => {
 		assert.deepStrictEqual(result, expected);
 	});
 
-	it('should only pick existing properties', () => {
+	it('Should only pick existing properties', () => {
 		const input = { a: 1, c: 3 };
 		const keys = ['a', 'b', 'c'];
 		const expected = { a: 1, c: 3 };
@@ -21,7 +21,7 @@ describe('pickProperties', () => {
 		assert.deepStrictEqual(result, expected);
 	});
 
-	it('should return empty object when input is empty', () => {
+	it('Should return empty object when input is empty', () => {
 		const input = {};
 		const keys = ['a', 'b'];
 		const expected = {};
@@ -29,7 +29,7 @@ describe('pickProperties', () => {
 		assert.deepStrictEqual(result, expected);
 	});
 
-	it('should return empty object when keys array is empty', () => {
+	it('Should return empty object when keys array is empty', () => {
 		const input = { a: 1, b: 2 };
 		const keys = [];
 		const expected = {};
@@ -37,13 +37,19 @@ describe('pickProperties', () => {
 		assert.deepStrictEqual(result, expected);
 	});
 
-	it('should skip falsy values', () => {
+	it('Should skip undefined values', () => {
 		const input = {
-			a: 0, b: null, c: undefined, d: false, e: 1
+			a: 0,
+			b: null,
+			c: undefined,
+			d: false,
+			e: 1
 		};
+
 		const keys = ['a', 'b', 'c', 'd', 'e'];
-		const expected = { e: 1 };
+		const expected = { a: 0, b: null, d: false, e: 1 };
 		const result = pickProperties(input, keys);
+
 		assert.deepStrictEqual(result, expected);
 	});
 
