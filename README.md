@@ -36,8 +36,6 @@ npm install --dev @aws-sdk/client-sns@3
 
 ### Important Changes from Version ***1.0.3*** to ***Latest***
 
-The session is required to obtain the `clientCode` and construct the `contentS3Path` for payloads that exceed the maximum SNS limit.
-
 #### Publish single event
 
 ```js
@@ -78,7 +76,7 @@ const snsTrigger = this.session.getSessionInstance(SnsTrigger);
 const result = await snsTrigger.publishEvents('topicName', [
 	{
 		content: {
-			id: '1'
+			foo: 'foo'
 		},
 		attributes: {
 			source: 'user',
@@ -88,7 +86,7 @@ const result = await snsTrigger.publishEvents('topicName', [
 	},
 	{
 		content: {
-			id: '2'
+			bar: 'bar'
 		},
 		attributes: {
 			source: 'user',
@@ -102,17 +100,19 @@ const result = await snsTrigger.publishEvents('topicName', [
  * Sample Output
  *
  * {
- * 	successCount: 1,
- * 	failedCount: 1,
- * 	outputs: [
- * 		{
- * 			success: true,
- *				messageId: '8563a94f-59f3-4843-8b16-a012867fe97e'
- * 		},
- * 		{
- * 			success: false,
- * 			errorCode: '',
- * 			errorMessage: ''
+ *   successCount: 1,
+ *   failedCount: 1,
+ *   success: [
+ *		{
+ * 			Id: '1',
+ * 			messageId: '8563a94f-59f3-4843-8b16-a012867fe97e'
+ * 		}
+ * 	],
+ * 	failed: [
+ *		{
+ * 			Id: '2',
+ * 			errorCode: 'SNS001',
+ * 			errorMessage: 'SNS Failed'
  * 		}
  * 	]
  * }
