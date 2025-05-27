@@ -29,14 +29,19 @@ npm install --dev @aws-sdk/client-sns@3
 > The event `content` will be JSON-stringified before sending
 
 > The event `attributes` can be either Strings or Arrays.  It's important to note that using other data types may cause issues or inconsistencies in the implemented filter policies. Ensure that the values provided for the attributes are always of the expected type to avoid errors in message processing.
+
 ***Note: This behavior applies from version 1.1.0 onward.***
+
+> The `payloadFixedProperties` event (available since v1.0.3) must be an array of strings containing the properties that must be mandatorily sent in the content. This is to improve error management, as these properties will allow us to identify which data failed and make a decision accordingly.
+
+### Important Changes from Version ***1.0.3*** to ***Latest***
 
 #### Publish single event
 
 ```js
 const { SnsTrigger } = require('@janiscommerce/sns');
 
-const snsTrigger = new SnsTrigger();
+const snsTrigger = this.session.getSessionInstance(SnsTrigger);
 
 const result = await snsTrigger.publishEvent('topicName', {
 	content: {
@@ -45,7 +50,8 @@ const result = await snsTrigger.publishEvent('topicName', {
 	attributes: {
 		source: 'user',
 		platforms: ['mobile', 'web']
-	}
+	},
+	payloadFixedProperties: ['id']
 });
 
 /**
@@ -65,26 +71,28 @@ const result = await snsTrigger.publishEvent('topicName', {
 ```js
 const { SnsTrigger } = require('@janiscommerce/sns');
 
-const snsTrigger = new SnsTrigger();
+const snsTrigger = this.session.getSessionInstance(SnsTrigger);
 
 const result = await snsTrigger.publishEvents('topicName', [
 	{
 		content: {
-			id: '1'
+			foo: 'foo'
 		},
 		attributes: {
 			source: 'user',
 			platform: 'mobile'
-		}
+		},
+		payloadFixedProperties: ['id']
 	},
 	{
 		content: {
-			id: '2'
+			bar: 'bar'
 		},
 		attributes: {
 			source: 'user',
 			platform: 'mobile'
-		}
+		},
+		payloadFixedProperties: ['id']
 	}
 ]);
 
@@ -92,17 +100,19 @@ const result = await snsTrigger.publishEvents('topicName', [
  * Sample Output
  *
  * {
- * 	successCount: 1,
- * 	failedCount: 1,
- * 	outputs: [
- * 		{
- * 			success: true,
- *				messageId: '8563a94f-59f3-4843-8b16-a012867fe97e'
- * 		},
- * 		{
- * 			success: false,
- * 			errorCode: '',
- * 			errorMessage: ''
+ *   successCount: 1,
+ *   failedCount: 1,
+ *   success: [
+ *		{
+ * 			Id: '1',
+ * 			messageId: '8563a94f-59f3-4843-8b16-a012867fe97e'
+ * 		}
+ * 	],
+ * 	failed: [
+ *		{
+ * 			Id: '2',
+ * 			errorCode: 'SNS001',
+ * 			errorMessage: 'SNS Failed'
  * 		}
  * 	]
  * }
