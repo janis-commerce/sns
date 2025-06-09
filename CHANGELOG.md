@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.1.0] - 2025-06-09
+### Added
+- **AWS X-Ray** support
+
 ### [2.0.0] - 2025-06-01
 ### Added
 - Added support for large payloads (>256KB) in SNS messages using S3 offloading
