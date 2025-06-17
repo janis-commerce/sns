@@ -36,7 +36,9 @@ npm install --dev @aws-sdk/client-sns@3
 
 ### Important Changes from Version ***1.0.3*** to ***Latest***
 
-#### Publish single event
+#### Changes from Version ***1.0.3***
+
+##### Publish single event
 
 ```js
 const { SnsTrigger } = require('@janiscommerce/sns');
@@ -44,22 +46,22 @@ const { SnsTrigger } = require('@janiscommerce/sns');
 const snsTrigger = this.session.getSessionInstance(SnsTrigger);
 
 const result = await snsTrigger.publishEvent('topicName', {
-	content: {
-		id: '1'
-	},
-	attributes: {
-		source: 'user',
-		platforms: ['mobile', 'web']
-	},
-	payloadFixedProperties: ['id']
+  content: {
+    id: '1'
+  },
+  attributes: {
+    source: 'user',
+    platforms: ['mobile', 'web']
+  },
+  payloadFixedProperties: ['id']
 });
 
 /**
  * Sample Output
  *
  * {
- * 	MessageId: '8563a94f-59f3-4843-8b16-a012867fe97e',
- * 	SequenceNumber: '' // For FIFO topics only
+ *   MessageId: '8563a94f-59f3-4843-8b16-a012867fe97e',
+ *   SequenceNumber: '' // For FIFO topics only
  * }
  */
 ```
@@ -74,26 +76,26 @@ const { SnsTrigger } = require('@janiscommerce/sns');
 const snsTrigger = this.session.getSessionInstance(SnsTrigger);
 
 const result = await snsTrigger.publishEvents('topicName', [
-	{
-		content: {
-			foo: 'foo'
-		},
-		attributes: {
-			source: 'user',
-			platform: 'mobile'
-		},
-		payloadFixedProperties: ['id']
-	},
-	{
-		content: {
-			bar: 'bar'
-		},
-		attributes: {
-			source: 'user',
-			platform: 'mobile'
-		},
-		payloadFixedProperties: ['id']
-	}
+  {
+    content: {
+      foo: 'foo'
+    },
+    attributes: {
+      source: 'user',
+      platform: 'mobile'
+    },
+    payloadFixedProperties: ['id']
+  },
+  {
+    content: {
+      bar: 'bar'
+    },
+    attributes: {
+      source: 'user',
+      platform: 'mobile'
+    },
+    payloadFixedProperties: ['id']
+  }
 ]);
 
 /**
@@ -103,18 +105,39 @@ const result = await snsTrigger.publishEvents('topicName', [
  *   successCount: 1,
  *   failedCount: 1,
  *   success: [
- *		{
- * 			Id: '1',
- * 			messageId: '8563a94f-59f3-4843-8b16-a012867fe97e'
- * 		}
- * 	],
- * 	failed: [
- *		{
- * 			Id: '2',
- * 			errorCode: 'SNS001',
- * 			errorMessage: 'SNS Failed'
- * 		}
- * 	]
+ *     {
+ *       Id: '1',
+ *       messageId: '8563a94f-59f3-4843-8b16-a012867fe97e'
+ *     }
+ *   ],
+ *   failed: [
+ *     {
+ *       Id: '2',
+ *       errorCode: 'SNS001',
+ *       errorMessage: 'SNS Failed'
+ *     }
+ *   ]
  * }
  */
+```
+
+#### Changes from Version ***2.1.0***
+
+##### Large Payload Support
+
+When using this package with serverless, it's recommended to use `sls-helper-plugin-janis` version 10.2.0 or higher to handle messages that exceed the SNS payload limit. This version is required to ensure proper permissions are set up.
+
+Additionally, it's recommended to update `@janiscommerce/sqs-consumer` to version 1.1.0 or higher in any service that listens to events emitted by this package. This way storage and retrieval of large payloads through S3 will be automatically handled when needed.
+
+
+For proper permissions setup, you need to export the SNS permissions in your `serverless.yml`:
+
+```js
+const { snsPermissions } = require('@janiscommerce/sns');
+
+await helper({
+  hooks: [
+    ...snsPermissions
+  ]
+})
 ```
